@@ -5,14 +5,12 @@
 echo '-------------------------------------------------------'
 echo "Checking Formatting"
 
-which elm-format > /dev/null
-
-if [ $? -ne 0 ]; then
-  echo "elm-format not found"
-  exit 1
+if [ ! -f "bin/elm-format" ] || [[ ! $(bin/elm-format --help | grep "elm-format-0.18 0.6.1-alpha") ]]; then
+  echo "Installing local copy of elm-format"
+  bin/install-elm-format
 fi
 
-elm-format --yes --validate exercises/**/*{.example,Tests.elm}
+bin/elm-format --yes --validate exercises/**/*.example.elm  exercises/**/tests/Tests.elm
 
 if [ $? -ne 0 ]; then
     echo "*******************************************************************"
@@ -24,39 +22,38 @@ if [ $? -ne 0 ]; then
     echo "*******************************************************************"
     exit 1
 else
-  echo "formatting looks good!"
+  echo "Formatting looks good!"
 fi
-
 
 # TEST
 
 declare -i TEST_RESULT=0
 FAILED_EXERCISES=''
 
-for example_file in exercises/**/*.example
+mkdir -p build/tests
+
+for example_file in exercises/**/*.example.elm
 do
+  # clean up generated code from last run
+  rm -rf build/tests/elm-stuff/generated-code/
+
   exercise_dir=$(dirname $example_file)
-  exercise=$(basename $example_file .example)
-  mv "$exercise_dir/$exercise.elm" "$exercise_dir/$exercise.impl"
-  mv "$exercise_dir/$exercise.example" "$exercise_dir/$exercise.elm"
+  exercise_name=$(basename $example_file .example.elm)
+  cp "$exercise_dir/$exercise_name.example.elm" "build/$exercise_name.elm"
+  cp "$exercise_dir/tests/elm-package.json" build/tests/
+  cat "$exercise_dir/tests/Tests.elm" | sed 's/skip <|//g' > build/tests/Tests.elm
+
   echo '-------------------------------------------------------'
-  echo "Testing $exercise"
+  echo "Testing $exercise_name"
 
-  # prevent elm-test from installing dependencies
-  mv $exercise_dir/elm-package.json $exercise_dir/elm-package.json.disabled
 
-  elm-test $exercise_dir/*Tests.elm
+  npm test -- build/tests/Tests.elm
 
   # capture result from last command (elm-test)
   if [ $? -ne 0 ]; then
       TEST_RESULT=1
-      FAILED_EXERCISES+="$exercise\n"
+      FAILED_EXERCISES+="$exercise_name\n"
   fi
-
-  # be kind, rewind
-  mv $exercise_dir/elm-package.json.disabled $exercise_dir/elm-package.json
-  mv "$exercise_dir/$exercise.elm" "$exercise_dir/$exercise.example"
-  mv "$exercise_dir/$exercise.impl" "$exercise_dir/$exercise.elm"
 done
 
 if [ $TEST_RESULT -ne 0 ]; then
